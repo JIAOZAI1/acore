@@ -12,9 +12,22 @@
 
 ## 2. 项目定位与目标
 
-Acore 是一个使用 Go 开发、可被其他 Go 项目引用的企业级 AI Agent 框架，模块路径为 `github.com/JIAOZAI1/acore`。
+Acore 是一套使用 Go 开发、可被其他 Go 项目引用的完整 AI Agent 运行框架，模块路径为 `github.com/JIAOZAI1/acore`。
 
-核心目标：
+Acore 的定位不是只提供底层协议和运行机制，而是覆盖 Agent 从构建、运行到治理的完整生命周期。框架应提供模型接入、工具执行、事件发布、运行时装配、对话推进、工具调度、运行结果、审批恢复、配置、可观测性和评测等能力，并为常见场景提供可直接使用的 Agent API 与默认实现。
+
+Acore 是通用运行框架，而不是绑定特定业务的一种 Agent 产品。完整能力与可扩展性必须同时成立：上层使用者可以开箱即用，也可以按需替换框架中的策略和实现。具体要求如下：
+
+- 默认实现与抽象契约分离，不得成为唯一执行路径；
+- 使用者可以替换 Provider、Tool、Proxy、Loop、Event Publisher 及其他扩展实现；
+- 默认策略只实现文档明确声明的语义，不把未稳定的业务决策固化进核心接口；
+- 核心模块不得为了方便默认实现而反向依赖具体实现；
+- 默认实现承担框架标准运行路径，不得仅作为示例或契约验证代码；
+- 框架必须提供完整、连贯的高层 API，同时保留下层模块独立组合和扩展的能力。
+
+例如，框架应提供可直接使用的标准工具调用 `Loop` 和 Agent Facade；工具调用轮数、并发、错误反馈、审批和恢复策略仍可通过明确的扩展点替换，不固化到 Looper 的最小契约中。
+
+框架目标：
 
 1. 大模型抽象：以统一接口屏蔽不同模型厂商的差异，并允许扩展厂商实现。
 2. 工具系统：支持工具定义、注册、发现和执行。
@@ -131,4 +144,59 @@ go test ./...
 
 ## 10. 当前已知设计上下文
 
-大模型抽象已有设计草案 `docs/llm-design.md`，核心方向是统一消息协议、事件流，以及 `Model`（数据描述）与 `Provider`（行为实现）分离。该文档仍包含待确认项；实施前应核对当前代码和用户最新决定，不能将草案中的开放点视为已经定案。
+大模型抽象采用统一消息协议和事件流，并分离 `Model`（数据描述）与 `Provider`（行为实现）；协议位于公共 `model` 包，以便外部实现 Provider、LLM 和 Loop。Looper 采用可替换的 `Loop` 策略，通过同步事件提供流式输出和背压，错误使用 Go error 传播；当前基础层暂不包含重试、持久化、审批和恢复语义，这些能力仍属于完整框架的建设范围。实施扩展前仍应核对 `docs/llm-design.md`、`docs/looper-design.md`、当前代码和用户最新决定。
+
+## 11. Runtime 架构约束
+
+后续模块统一围绕 Runtime 架构演进。Runtime 是进程级共享能力的组合中心，用于隔离模块的具体实现依赖，但不能成为无类型约束的 Service Locator。
+
+### 11.1 分层与依赖方向
+
+- `model`、`event`、`tool` 等包定义稳定、最小的领域协议和数据类型，并保持为不依赖 Runtime 的叶子包。
+- `runtime` 依赖这些领域协议，通过窄接口组合模型寻址、工具执行和事件发布等共享能力，不依赖具体 Provider、Tool、EventBus 或 Looper 实现。
+- `looper` 是 Runtime 能力的消费者和编排层，可以依赖 Runtime；Runtime 禁止反向依赖 `looper`，避免循环依赖。
+- 具体 Provider、Tool、EventBus 和 Looper 由应用启动层（Composition Root）显式构造和装配，模块之间不得直接引用其他模块的具体实现。
+- 领域协议类型之间必要的静态依赖可以保留；不得为了表面上的“零 import”而使用 `any`、字符串查找或反射破坏类型安全。
+
+推荐依赖方向：
+
+```text
+model / event / tool contracts
+              ▲
+              │
+           runtime
+              ▲
+              │
+            looper
+              ▲
+              │
+      application bootstrap
+```
+
+### 11.2 构建期注册
+
+Runtime 使用类型化 Builder 或类型化 Option 在启动阶段完成装配，例如 `UseEvents`、`AddProvider` 和 `UseTools`。禁止提供 `Register(any)`、`map[string]any` 或依赖 type switch 的通用注册入口。
+
+不同组件必须保留各自明确的注册语义：
+
+- Model Provider 可以有多个，按 Provider ID 注册和寻址；
+- Tool 和自定义执行 Proxy 在独立 ToolSystem 中注册；ToolSystem 按工具名称寻址并在每次有效调用时执行其不可变代理链；Runtime 只通过 `UseTools` 接收构建完成的 `tool.Service`，不得注册 Tool、Proxy 或暴露代理链；
+- EventBus 通常是单实例能力，使用设置语义而不是追加语义；
+- Event Handler 通过事件系统订阅，不把事件实例当作服务注册；
+- Loop 不注册到 Runtime。需要多个具名 Loop 时，由 `looper` 包或更上层 Agent 组件维护独立 Registry。
+
+Runtime Builder 和 Tool Builder 必须分别验证各自的必需能力、重复 ID、重复名称和单实例冲突。二者在 Build 后均冻结配置，只提供并发安全的读取和调用；在出现明确热插拔需求前，不支持运行期动态注册和卸载。
+
+### 11.3 运行期边界
+
+进程级 Runtime 只保存共享能力，字段不导出，并通过最小接口暴露 `Models`、`Tools`、`Events` 等能力。禁止向调用方暴露可直接修改的具体 Registry 或 Bus。工具注册、发现和代理链执行属于 ToolSystem；Loop 只能通过运行级 `tool.Service` 发现和执行工具，Loop 与模型均不可观察或修改代理链。
+
+标准库 `context.Context` 必须继续作为方法第一个参数显式传递，不得存入 Runtime。单次 Agent 运行应创建独立的 RunContext，只暴露该次 Loop 所需的模型生成、工具执行和事件发布能力；对话、已绑定 LLM、Run ID 和临时工具结果等运行状态不得放入进程级 Runtime。
+
+Runtime 只应传给确实需要跨模块编排的边界层。Provider、EventBus、Registry 和普通 Tool 不应仅为获取依赖而持有整个 Runtime；它们应通过构造函数接收自身所需的最小依赖。
+
+### 11.4 生命周期与首版范围
+
+首版由 Composition Root 负责注入组件的资源释放，Runtime 不隐式取得外部组件所有权，也不隐式创建默认 Provider、EventBus 或 ToolRegistry。未来如需统一 `Start/Close`，必须先明确启动顺序、逆序关闭、部分启动失败回滚和并发关闭语义，再扩展 Runtime 生命周期协议。
+
+涉及 Runtime 公共 API、依赖方向、动态注册或组件所有权的调整属于跨模块架构变更，实施前必须先与用户确认并同步更新正式设计文档。

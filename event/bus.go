@@ -138,6 +138,8 @@ func (b *Bus) unsubscribe(eventType reflect.Type, id uint64) {
 	}
 }
 
+var _ Publisher = (*Bus)(nil)
+
 func isNil(value any) bool {
 	if value == nil {
 		return true

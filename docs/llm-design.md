@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-`internal/model` 只定义厂商无关的 LLM 协议，不实现 OpenAI、Anthropic、Gemini 等具体协议。
+`model` 公共包只定义厂商无关的 LLM 协议，不实现 OpenAI、Anthropic、Gemini 等具体协议。
 
 核心目标：
 
@@ -208,7 +208,7 @@ providerID/modelID
 ## 7. 文件职责
 
 ```text
-internal/model/
+model/
 ├── llm.go       # 消息、请求、结果、事件、Stream、LLM、Bind、Complete
 ├── provider.go  # Provider 接口和 ProviderRegistry
 └── llm_test.go  # 抽象契约测试，不依赖任何真实厂商
@@ -224,7 +224,7 @@ internal/provider/anthropic/
 internal/provider/gemini/
 ```
 
-如果该能力需要被仓库外的项目直接导入，应在 API 稳定后将协议移动到非 `internal` 的公共包，例如 `llm/`；否则 Go 会阻止外部项目导入。
+协议位于非 `internal` 的公共包，仓库外项目可以实现 Provider、LLM 和 Loop，而不依赖内部厂商实现。
 
 ---
 
@@ -234,5 +234,5 @@ internal/provider/gemini/
 2. 增加流事件顺序的通用契约测试；
 3. 继续完善 Provider 配置和凭据管理，但不把凭据放入 Request；
 4. 以 OpenAI Provider 作为首个参考实现完善契约测试；
-5. 实现 Agent 工具循环和重试策略；
+5. 以独立 Loop 实现 Agent 工具循环；重试仅作为可选上层策略，不进入模型或 Looper 核心契约；
 6. 协议稳定后再增加其他 Provider。

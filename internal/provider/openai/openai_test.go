@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/JIAOZAI1/acore/internal/model"
+	"github.com/JIAOZAI1/acore/model"
 )
 
 func TestCompleteTextStream(t *testing.T) {

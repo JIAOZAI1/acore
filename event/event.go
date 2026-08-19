@@ -15,6 +15,13 @@ type Event interface {
 	Name() string
 }
 
+// Publisher is the minimal event publication capability shared across
+// components. Implementations define delivery and error semantics; Bus provides
+// synchronous in-process delivery.
+type Publisher interface {
+	Publish(context.Context, Event) error
+}
+
 // Handler consumes events of the exact type returned by EventType.
 // Implementations should honor context cancellation and must be safe to call
 // concurrently when the same Bus is published to concurrently.

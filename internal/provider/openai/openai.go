@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JIAOZAI1/acore/internal/model"
+	"github.com/JIAOZAI1/acore/model"
 )
 
 const (
