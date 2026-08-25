@@ -1,5 +1,5 @@
 // Package model defines the provider-independent LLM protocol used by the
-// runtime. It contains protocol data and orchestration helpers only; vendor
+// agent loop. It contains protocol data and orchestration helpers only; vendor
 // request/response types belong in provider implementations.
 package model
 
@@ -120,8 +120,12 @@ type Model struct {
 	API             string   `json:"api,omitempty"`
 	Reasoning       bool     `json:"reasoning,omitempty"`
 	InputModalities []string `json:"inputModalities,omitempty"`
-	ContextWindow   int      `json:"contextWindow,omitempty"`
-	MaxOutputTokens int      `json:"maxOutputTokens,omitempty"`
+	// ContextWindow is the maximum combined input and requested output token
+	// count for one generation. Zero means unknown.
+	ContextWindow int `json:"contextWindow,omitempty"`
+	// MaxOutputTokens is the model's maximum output token count. Zero means
+	// unknown.
+	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
 }
 
 // ReasoningLevel requests a provider-independent reasoning intensity.
@@ -217,7 +221,7 @@ type Event struct {
 }
 
 // Stream is a pull-based event stream. A provider yields (event, nil) for
-// progress, yields one error for a runtime failure, and then returns. Returning
+// progress, yields one error for a generation failure, and then returns. Returning
 // from iteration early must release provider resources via generator defers.
 type Stream = iter.Seq2[Event, error]
 

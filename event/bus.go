@@ -6,29 +6,31 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+
+	"github.com/JIAOZAI1/acore/internal/nilcheck"
 )
 
 var (
-	// ErrNilEvent indicates that Publish received a nil event, including a typed nil pointer.
+	// ErrNilBus indicates that an operation received a nil Bus.
+	ErrNilBus = errors.New("event: nil bus")
+	// ErrNilEvent indicates that Publish received a nil event, including a typed nil.
 	ErrNilEvent = errors.New("event: nil event")
-	// ErrNilHandler indicates that SubscribeHandler received a nil handler.
+	// ErrNilHandler indicates that Subscribe received a nil handler function.
 	ErrNilHandler = errors.New("event: nil handler")
-	// ErrNilHandlerFunc indicates that Subscribe received a nil handler function.
-	ErrNilHandlerFunc = errors.New("event: nil handler function")
-	// ErrInvalidEventType indicates that a handler did not declare a concrete Event type.
-	ErrInvalidEventType = errors.New("event: event type must be concrete and implement Event")
+	// ErrInvalidEventType indicates that a subscription did not specify a concrete event type.
+	ErrInvalidEventType = errors.New("event: event type must be concrete")
 )
 
 type subscriptionEntry struct {
 	id      uint64
-	handler Handler
+	handler func(context.Context, Event) error
 }
 
 // Bus is a concurrency-safe, synchronous, in-process event bus.
 //
 // Handlers run sequentially in subscription order. Publish invokes every
-// handler in its snapshot and joins their errors. A Bus must not be copied
-// after first use. Its zero value is ready to use.
+// handler in its snapshot and joins their errors. The zero value is ready to
+// use. A Bus must not be copied after first use.
 type Bus struct {
 	mu       sync.RWMutex
 	nextID   uint64
@@ -40,16 +42,21 @@ func NewBus() *Bus {
 	return &Bus{handlers: make(map[reflect.Type][]subscriptionEntry)}
 }
 
-// Publish synchronously delivers event to handlers subscribed to its exact Go
-// type. Handler errors are joined so one failing handler does not prevent later
-// handlers from running. If ctx is canceled, Publish stops before invoking the
-// next handler and returns the cancellation error together with prior errors.
-func (b *Bus) Publish(ctx context.Context, event Event) error {
-	if isNil(event) {
+// Publish synchronously delivers an event to handlers subscribed to its exact
+// Go type. A failing handler does not prevent later handlers from running. If
+// ctx is canceled, Publish stops before invoking the next handler.
+func (b *Bus) Publish(ctx context.Context, published Event) error {
+	if b == nil {
+		return ErrNilBus
+	}
+	if nilcheck.IsNil(published) {
 		return ErrNilEvent
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
-	eventType := reflect.TypeOf(event)
+	eventType := reflect.TypeOf(published)
 	b.mu.RLock()
 	entries := append([]subscriptionEntry(nil), b.handlers[eventType]...)
 	b.mu.RUnlock()
@@ -60,19 +67,16 @@ func (b *Bus) Publish(ctx context.Context, event Event) error {
 			handlerErrors = append(handlerErrors, err)
 			break
 		}
-		if err := entry.handler.Handle(ctx, event); err != nil {
-			handlerErrors = append(handlerErrors, fmt.Errorf("event: handle %T with subscription %d: %w", event, entry.id, err))
+		if err := entry.handler(ctx, published); err != nil {
+			handlerErrors = append(handlerErrors, fmt.Errorf(
+				"event: handle %T with subscription %d: %w",
+				published,
+				entry.id,
+				err,
+			))
 		}
 	}
 	return errors.Join(handlerErrors...)
-}
-
-// Subscription controls the lifetime of a registered handler.
-type Subscription interface {
-	// Unsubscribe removes the handler from future publication snapshots.
-	// It is idempotent. A publication that already captured the handler may
-	// still invoke it.
-	Unsubscribe()
 }
 
 type busSubscription struct {
@@ -88,24 +92,24 @@ func (s *busSubscription) Unsubscribe() {
 	})
 }
 
-// Subscribe registers a type-safe handler for E.
-func Subscribe[E Event](b *Bus, fn HandlerFunc[E]) (Subscription, error) {
-	if fn == nil {
-		return nil, ErrNilHandlerFunc
+// Subscribe registers a type-safe handler for events of the exact type E.
+func Subscribe[E Event](b *Bus, handler HandlerFunc[E]) (Subscription, error) {
+	if b == nil {
+		return nil, ErrNilBus
 	}
-	return b.SubscribeHandler(typedHandler[E]{fn: fn})
-}
-
-// SubscribeHandler registers a custom Handler. Most callers should use the
-// generic Subscribe function instead.
-func (b *Bus) SubscribeHandler(handler Handler) (Subscription, error) {
-	if isNil(handler) {
+	if handler == nil {
 		return nil, ErrNilHandler
 	}
 
-	eventType := handler.EventType()
+	eventType := reflect.TypeFor[E]()
 	if eventType == nil || eventType.Kind() == reflect.Interface || !eventType.Implements(reflect.TypeFor[Event]()) {
 		return nil, ErrInvalidEventType
+	}
+
+	entry := subscriptionEntry{
+		handler: func(ctx context.Context, published Event) error {
+			return handler(ctx, published.(E))
+		},
 	}
 
 	b.mu.Lock()
@@ -114,7 +118,7 @@ func (b *Bus) SubscribeHandler(handler Handler) (Subscription, error) {
 		b.handlers = make(map[reflect.Type][]subscriptionEntry)
 	}
 	b.nextID++
-	entry := subscriptionEntry{id: b.nextID, handler: handler}
+	entry.id = b.nextID
 	b.handlers[eventType] = append(b.handlers[eventType], entry)
 
 	return &busSubscription{bus: b, eventType: eventType, id: entry.id}, nil
@@ -139,16 +143,3 @@ func (b *Bus) unsubscribe(eventType reflect.Type, id uint64) {
 }
 
 var _ Publisher = (*Bus)(nil)
-
-func isNil(value any) bool {
-	if value == nil {
-		return true
-	}
-	reflected := reflect.ValueOf(value)
-	switch reflected.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return reflected.IsNil()
-	default:
-		return false
-	}
-}
