@@ -1,6 +1,7 @@
 # acore
 
 [![Go CI](https://github.com/JIAOZAI1/acore/actions/workflows/ci.yml/badge.svg)](https://github.com/JIAOZAI1/acore/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 `acore` 是一个用 Go 编写的可组合 Agent 框架。它通过 Builder 组装模型、运行策略、工具、Prompt、Session 和上下文窗口组件，让应用可以按场景选择、替换和扩展能力，而不把具体 Provider 或业务实现固化在 Agent 主流程中。
 
@@ -461,3 +462,9 @@ gofmt -w <changed-go-files>
 - 不把应用配置、凭证或具体厂商 DTO 放入核心协议；
 - 新功能和缺陷修复应覆盖正常、边界和关键错误路径；
 - 提交前运行与改动范围匹配的测试、静态检查和竞态检测。
+
+## 开源协议
+
+Copyright 2026 acore contributors.
+
+本项目依据 [Apache License 2.0](LICENSE) 开源。你可以在遵守协议条款的前提下使用、修改和分发本项目，包括用于商业用途。
