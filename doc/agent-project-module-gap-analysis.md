@@ -4,7 +4,7 @@
 
 本文基于 2026-08-31 工作区中的实际代码继续分析，分析基线为：
 
-- `acore`：`main` 分支，提交 `d836e1b`；
+- `acore`：公开版本 `v0.1.0` 指向提交 `d14a527`；`main` 已包含后续 Release Workflow 修复；
 - `agent`：仍只有空入口 `agent/main/maig.go`，没有 `go.mod`；
 - `acore`：共 15 个 Go 包（含 3 个 `internal` 包），根 README、Apache 2.0 LICENSE 和 CI 已存在；其目标是作为 GitHub 上可由外部项目导入的公开 Go 模块，必须独立构建、按版本发布；
 - `doc`：现有 Agent、Strategy、Tool、Prompt、Session、Context Window、Event、Provider 和 Checkpoint 分析文档。
@@ -56,7 +56,7 @@ SingleTurn / ToolLoop                │
 
 继续分析后的关键结论：
 
-1. **既然 `acore` 是对外发布的公开 Go 模块，当前第一优先级是完成首个版本发布。** 当前工作区已经补充标签发布 Workflow、Changelog、发布指南、兼容性说明、包级文档和模块外导入检查，但还没有实际 SemVer 标签与 GitHub Release；完整闭环必须以 `v0.1.0` 发布成功为准。
+1. **`acore` 的首个公开版本 `v0.1.0` 已发布，版本化发布不再是当前阻断项。** GitHub Release、按版本模块外导入和公共 Go module proxy 均已验证；后续版本仍需验证修复后的标签 Workflow 能否全自动完成完整链路。
 2. **项目级最大功能缺口仍在 `agent` 应用，而不是 `acore` 最小运行核心。** 应用没有模块边界、配置、组件装配和可运行入口，尚未完成端到端验证。
 3. **`acore` 唯一已经有数据契约却没有运行闭环的模块仍是 RunEvent。** 它应先于新增更多领域事件完成发布集成。
 4. **`acore` 生产化最短板是适配器和治理实现。** 首要是 Provider/模型 Token Estimator、持久化 Session、Telemetry 订阅器，以及按需提供 LLM 装饰器和 Tool Proxy。
@@ -307,7 +307,7 @@ SingleTurn / ToolLoop                │
 - `go test -race ./...`；
 - `go vet ./...`。
 
-当前 `acore` 根目录已经有 README、快速开始、安全边界说明和 Apache 2.0 LICENSE。常规 CI 在 `main` push 和 pull request 上运行；当前工作区新增的 Release Workflow 监听稳定 SemVer 标签，在独立质量门禁通过后创建 GitHub Release，并验证公共 Go module proxy。Changelog、发布指南、Provider 能力矩阵，以及 `singleturn`、`toolloop` 两个公开子包的包级文档也已经补充。当前剩余缺口是提交这些基础设施并实际发布、验证 `v0.1.0`。
+当前 `acore` 根目录已经有 README、快速开始、安全边界说明和 Apache 2.0 LICENSE。常规 CI 在 `main` push 和 pull request 上运行；Release Workflow 监听稳定 SemVer 标签，在独立质量门禁通过后创建 GitHub Release，并验证公共 Go module proxy。Changelog、发布指南、Provider 能力矩阵，以及 `singleturn`、`toolloop` 两个公开子包的包级文档也已经补充。`v0.1.0` 已发布并可由外部模块解析。
 
 ## 4. 当前实际运行数据流
 
@@ -344,7 +344,7 @@ SingleTurn / ToolLoop                │
 
 | 能力 | 当前状态 | 是否是 acore 核心缺口 | 建议动作 |
 | --- | --- | --- | --- |
-| 公开模块版本化发布 | 发布基础设施已补充，无实际版本与 Release | 是，发布缺口 | acore 第一优先级，完成 `v0.1.0` 发布与模块外验收 |
+| 公开模块版本化发布 | `v0.1.0` 已发布并完成外部验收 | 否，已闭环 | 后续版本持续执行并验证自动化 Workflow |
 | Agent 应用装配 | 应用未实现 | 否 | 项目功能第一优先级，建立端到端闭环 |
 | RunEvent 发布集成 | 契约已实现、未接入 | 是，集成缺口 | acore 功能第一优先级 |
 | Token Estimator | 有接口、无实现 | 否，适配器缺口 | 选定模型后实现 |
@@ -524,11 +524,13 @@ SingleTurn / ToolLoop                │
 
 评测数据集、业务评分器和 CI 阈值通常属于应用或独立工具，不应进入 Agent 运行链路。
 
-### 5.11 第一优先级：完成首个公开 Go 模块版本
+### 5.11 已完成：首个公开 Go 模块版本
 
-性质：**发布基础设施已实现，实际发布尚未完成**。
+性质：**发布闭环已建立，后续需持续验证自动化**。
 
-`acore` 面向外部用户，当前工作区已经具备顶层 README、快速开始、组装示例、安全边界说明、LICENSE、常规 CI、Release Workflow、Changelog 和发布指南。只有在这些改动提交到 `main`，并由 `v0.1.0` 标签成功触发 GitHub Release 和模块代理验证后，才形成“提交可验证、版本可追踪、外部可安装”的完整闭环。
+`acore` 已具备顶层 README、快速开始、组装示例、安全边界说明、LICENSE、常规 CI、Release Workflow、Changelog 和发布指南。`v0.1.0` annotated tag 指向提交 `d14a527`，GitHub Release 已发布，独立外部模块和公共 Go module proxy 均可解析该版本。
+
+首次标签 Workflow 因 `actions/checkout` 解引用 annotated tag 而在标签类型校验阶段失败，未创建 Release；发布过程中没有移动或覆盖标签，而是在执行等价质量门禁后手工创建 Release。主分支随后修复了标签对象获取和只读 module cache 清理。该修复尚未经过下一个真实版本标签的端到端验证，是发布工程当前剩余风险。
 
 Go 库的主要发布物是带版本标签的模块源码，不是必须上传单独二进制。当前 `go.mod` 位于 GitHub 仓库根，因此版本应使用仓库根 SemVer 标签，例如首个确认版本 `v0.1.0`；不使用子目录标签，也不应同时在代码中维护另一套容易漂移的版本号。只有未来确实提供 CLI/Server 命令时，才另外构建平台二进制和 checksum。
 
@@ -551,7 +553,7 @@ Go 库的主要发布物是带版本标签的模块源码，不是必须上传�
 - Provider/API/内容类型能力矩阵；
 - RunEvent 设计文档的实际实现状态。
 
-`CHANGELOG.md` 已建立 `0.1.0` 版本章节并记录发布日期；Release Workflow 会拒绝没有对应 Changelog 章节的标签。当前剩余步骤是提交改动、确认远端 CI、创建 annotated tag 并由 GitHub 完成发布后验证。
+`CHANGELOG.md` 已建立 `0.1.0` 版本章节并记录发布日期；Release Workflow 会拒绝没有对应 Changelog 章节的标签。后续发布应继续坚持“确认版本与 Release Notes → 创建 annotated tag → Workflow 验证 → 创建 GitHub Release → module proxy 验证”的顺序。
 
 发布工作流不应根据未审核提交自动推导并推送版本标签；版本决策属于发布者。建议流程是“确认版本与 Release Notes → 创建标签 → CI 重新验证该标签 → 创建 GitHub Release”。
 
@@ -708,7 +710,7 @@ MCP 应适配为 `tool.Tool` 或 `tool.Service`，不修改 ToolLoop 识别 MCP�
 
 ## 8. 推荐实施顺序
 
-### 阶段一：建立公开模块发布闭环
+### 阶段一：建立公开模块发布闭环（已完成 `v0.1.0`）
 
 1. 编写 GitHub 版本发布专项方案，确认首个版本、兼容性规则、触发方式和权限；
 2. 补齐公开包文档、Provider 能力矩阵、设计状态和 Release Notes；
@@ -778,20 +780,21 @@ go test -race ./...
 - `go test ./...`：通过；
 - `go vet ./...`：通过；
 - `go test -race ./...`：默认环境 `CGO_ENABLED=0` 无法执行；显式设置 `CGO_ENABLED=1` 后又因本机没有 `gcc` 失败，未完成本地竞态验证；
-- CI 与 Release Workflow 均配置在 Ubuntu 环境执行 `go test -race ./...`；
+- 常规 Go CI 在 `v0.1.0` 对应提交 `d14a527` 上通过，包括 Ubuntu `go test -race ./...`；
 - 所有公开包均已有 package doc；
 - Release Workflow YAML 可解析，所有内嵌 Shell 通过 `bash -n` 语法检查；
-- 使用临时独立模块和本地 `replace` 导入全部公开包并执行 `go test ./...`：通过；
-- `git tag --list` 为空，当前没有可供外部固定使用的 SemVer 版本；
-- 尚未执行带版本号的远程 `go get`、GitHub Release 和 module proxy 验证，因为当前没有发布标签。
+- 使用临时独立模块按 `v0.1.0` 从 GitHub 下载、导入全部公开包并执行 `go test ./...`：通过；
+- `go list -m github.com/JIAOZAI1/acore@v0.1.0` 通过公共 proxy 与 checksum database 成功解析到 `d14a527`；
+- GitHub Release 已发布：<https://github.com/JIAOZAI1/acore/releases/tag/v0.1.0>；
+- 修复 Release Workflow 的主分支提交已通过常规 Go CI，但完整标签 Workflow 需由下一版本继续验证。
 
-本次实现了发布 Workflow、Changelog、发布与安全文档、README 版本信息和两个公开 Strategy 子包的包级文档；没有修改 Agent 运行逻辑，也没有创建提交、标签或 GitHub Release。
+本次实现并发布了 `v0.1.0`，没有修改 Agent 运行逻辑。发布标签保持不可变；首次 Workflow 失败后的修复只进入后续主分支和未来版本。
 
 ## 10. 已确认发布决策与后续待确认事项
 
 已确认并按此实现发布基础设施：
 
-1. 首个计划公开版本为 `v0.1.0`，采用 SemVer，`v0` 阶段的破坏性变化必须明确记录；
+1. 首个公开版本 `v0.1.0` 已发布，采用 SemVer，`v0` 阶段的破坏性变化必须明确记录；
 2. 发布者手工创建 annotated tag，Release Workflow 只验证标签和创建 GitHub Release；
 3. 最低版本为 Go 1.26；
 4. 当前只发布 Go 模块源码，不构建 CLI/Server 二进制。

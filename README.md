@@ -1,6 +1,8 @@
 # acore
 
 [![Go CI](https://github.com/JIAOZAI1/acore/actions/workflows/ci.yml/badge.svg)](https://github.com/JIAOZAI1/acore/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/JIAOZAI1/acore)](https://github.com/JIAOZAI1/acore/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/JIAOZAI1/acore.svg)](https://pkg.go.dev/github.com/JIAOZAI1/acore)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 `acore` 是一个用 Go 编写的可组合 Agent 框架。它通过 Builder 组装模型、运行策略、工具、Prompt、Session 和上下文窗口组件，让应用可以按场景选择、替换和扩展能力，而不把具体 Provider 或业务实现固化在 Agent 主流程中。
@@ -82,13 +84,7 @@
 go get github.com/JIAOZAI1/acore@v0.1.0
 ```
 
-如果 GitHub 上尚未出现 `v0.1.0` 标签和 Release，说明首次发布尚未完成；此时只能临时固定一个已验证的 commit：
-
-```bash
-go get github.com/JIAOZAI1/acore@<commit>
-```
-
-不要依赖未固定的分支头完成生产构建。
+当前首个公开版本为 `v0.1.0`。生产构建应固定明确版本，不要依赖分支头。
 
 ## 快速开始：SingleTurn
 

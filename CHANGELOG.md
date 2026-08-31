@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- README 和模块分析文档同步 `v0.1.0` 实际发布状态。
+
 ### Fixed
 
 - Release Workflow 显式获取 annotated tag 对象，并正确清理只读 Go module cache，避免标签类型和发布后验证误判。
