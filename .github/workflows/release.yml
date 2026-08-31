@@ -31,6 +31,8 @@ jobs:
             echo "release tag must be a stable semantic version such as v0.1.0" >&2
             exit 1
           fi
+          git fetch --force --no-tags origin \
+            "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
           if [[ "$(git tag --points-at HEAD --list "${GITHUB_REF_NAME}")" != "${GITHUB_REF_NAME}" ]]; then
             echo "release tag does not point at the checked-out commit" >&2
             exit 1

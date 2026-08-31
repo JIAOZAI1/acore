@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Release Workflow 显式获取 annotated tag 对象，避免 `actions/checkout` 解引用标签后误判为 lightweight tag。
+
 ## [0.1.0] - 2026-08-31
 
 ### Added
