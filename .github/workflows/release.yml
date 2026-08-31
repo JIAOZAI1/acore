@@ -1,0 +1,186 @@
+name: Go Module Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify module
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "release tag must be a stable semantic version such as v0.1.0" >&2
+            exit 1
+          fi
+          if [[ "$(git tag --points-at HEAD --list "${GITHUB_REF_NAME}")" != "${GITHUB_REF_NAME}" ]]; then
+            echo "release tag does not point at the checked-out commit" >&2
+            exit 1
+          fi
+          if [[ "$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")" != "tag" ]]; then
+            echo "release tag must be an annotated tag" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "release commit must be contained in origin/main" >&2
+            exit 1
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          if ! grep -Fq "## [${version}]" CHANGELOG.md; then
+            echo "CHANGELOG.md has no section for ${version}" >&2
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify module metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(go list -m -f '{{.Path}}')" = "github.com/JIAOZAI1/acore"
+          test "$(go list -m -f '{{.GoVersion}}')" = "1.26"
+          if grep -Eq '^[[:space:]]*replace([[:space:]]|$)' go.mod; then
+            echo "release go.mod must not contain replace directives" >&2
+            exit 1
+          fi
+          go mod tidy
+          if [[ -n "$(git status --porcelain -- go.mod go.sum)" ]]; then
+            echo "go mod tidy changed module metadata" >&2
+            git diff -- go.mod go.sum >&2
+            exit 1
+          fi
+
+      - name: Verify public package documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          undocumented="$(go list -f '{{if not .Doc}}{{.ImportPath}}{{end}}' ./... | grep -v '/internal/' || true)"
+          if [[ -n "${undocumented}" ]]; then
+            echo "public packages without package documentation:" >&2
+            echo "${undocumented}" >&2
+            exit 1
+          fi
+
+      - name: Build packages
+        run: go build ./...
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Run race tests
+        run: go test -race ./...
+
+      - name: Run vet
+        run: go vet ./...
+
+      - name: Verify versioned module from an external consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          module="github.com/JIAOZAI1/acore"
+          consumer="$(mktemp -d)"
+          trap 'rm -rf "${consumer}"' EXIT
+
+          cd "${consumer}"
+          go mod init example.com/acore-release-check
+          GOPROXY=direct GONOSUMDB="${module}" go get "${module}@${GITHUB_REF_NAME}"
+          cat > modulecheck_test.go <<'GOEOF'
+          package modulecheck
+
+          import (
+          	_ "github.com/JIAOZAI1/acore/agent"
+          	_ "github.com/JIAOZAI1/acore/agent/agent-strategy"
+          	_ "github.com/JIAOZAI1/acore/agent/agent-strategy/singleturn"
+          	_ "github.com/JIAOZAI1/acore/agent/agent-strategy/toolloop"
+          	_ "github.com/JIAOZAI1/acore/agent/runevent"
+          	_ "github.com/JIAOZAI1/acore/contextwindow"
+          	_ "github.com/JIAOZAI1/acore/event"
+          	_ "github.com/JIAOZAI1/acore/model"
+          	_ "github.com/JIAOZAI1/acore/prompt"
+          	_ "github.com/JIAOZAI1/acore/provider/openai"
+          	_ "github.com/JIAOZAI1/acore/session"
+          	_ "github.com/JIAOZAI1/acore/tool"
+          )
+          GOEOF
+          go test ./...
+
+  publish:
+    name: Publish GitHub release
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "GitHub release ${GITHUB_REF_NAME} already exists"
+            exit 0
+          fi
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
+
+  verify-proxy:
+    name: Verify Go module proxy
+    needs: publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          cache: false
+
+      - name: Resolve released version through the public proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          module="github.com/JIAOZAI1/acore@${GITHUB_REF_NAME}"
+          for attempt in $(seq 1 20); do
+            cache="$(mktemp -d)"
+            if GOMODCACHE="${cache}" \
+              GOPROXY="https://proxy.golang.org" \
+              GOSUMDB="sum.golang.org" \
+              go mod download "${module}"; then
+              rm -rf "${cache}"
+              exit 0
+            fi
+            rm -rf "${cache}"
+            if [[ "${attempt}" -eq 20 ]]; then
+              echo "module proxy did not resolve ${module}" >&2
+              exit 1
+            fi
+            sleep 15
+          done

@@ -2,23 +2,25 @@
 
 ## 1. 分析说明
 
-本文基于 2026-08-26 工作区中的实际代码重新分析，分析基线为：
+本文基于 2026-08-31 工作区中的实际代码继续分析，分析基线为：
 
-- `acore`：`main` 分支，提交 `9409d40`；
-- `agent`：仅存在空入口 `agent/main/maig.go`；
-- `doc`：现有 Agent、Strategy、Tool、Prompt、Session、Context Window、Event 和 Provider 设计文档。
+- `acore`：`main` 分支，提交 `d836e1b`；
+- `agent`：仍只有空入口 `agent/main/maig.go`，没有 `go.mod`；
+- `acore`：共 15 个 Go 包（含 3 个 `internal` 包），根 README、Apache 2.0 LICENSE 和 CI 已存在；其目标是作为 GitHub 上可由外部项目导入的公开 Go 模块，必须独立构建、按版本发布；
+- `doc`：现有 Agent、Strategy、Tool、Prompt、Session、Context Window、Event、Provider 和 Checkpoint 分析文档。
 
-本次分析先删除旧版 `agent-project-module-gap-analysis.md`，再从当前源码、公开 API、包依赖、测试和应用目录重新得出结论，不把旧文档中的阶段判断作为事实来源。
+本次在上一版盘点基础上继续核对源码、公开 API、包依赖、测试、README、Git 状态和应用目录，重点补充“最小框架可运行之后，为形成可生产、可扩展 Agent 框架还缺什么”，并纠正上一版对 README 和分析基线的过时描述。
 
-未查阅外部参考项目。本文只引用仓库内已经存在的设计资料，不声称采用了 Eino、pi 或 DeepSeek Harness 的新增方案。
+除仓库内已有的 Eino Checkpoint 分析外，本次没有新增查阅外部参考项目；不声称采用了 pi、DeepSeek Harness 或其他项目的新方案。
 
-为避免把不同性质的问题都称为“缺少模块”，本文使用四种状态：
+为避免把不同性质的问题都称为“缺少模块”，本文使用五种状态：
 
 | 状态 | 含义 |
 | --- | --- |
 | 已实现并接入 | 公开契约、实现和主运行链路均已存在 |
 | 契约已实现、尚未接入 | 数据类型或接口存在，但运行代码没有使用 |
 | 扩展点已实现、缺具体适配 | 核心接口足够，缺面向某个 Provider、存储或部署环境的实现 |
+| 候选公共能力 | 已发现跨实现需求，但公开边界尚需真实用例验证 |
 | 尚未设计 | 当前没有稳定契约，应等真实需求出现后再设计 |
 
 ## 2. 总体结论
@@ -52,13 +54,16 @@ SingleTurn / ToolLoop                │
   └── Session Append（成功后，可选）
 ```
 
-重新分析后的关键结论：
+继续分析后的关键结论：
 
-1. **项目当前最大的缺口不在 `acore`，而在 `agent` 应用。** 应用没有模块边界、配置、组件装配和可运行入口，尚未完成端到端验证。
-2. **`acore` 当前最明确的集成缺口是 RunEvent。** `agent/runevent` 已定义标准事件，但 Agent 和 Strategy 均未发布这些事件。
-3. **生产化缺口主要是具体适配器。** `contextwindow.Estimator`、`session.Service`、`model.LLM` 装饰器和 `tool.Proxy` 等扩展点已经存在，不应重复设计大接口。
-4. **Checkpoint、MCP、长期记忆、丰富工具结果和高级策略仍是场景驱动能力。** 它们不是当前最小框架的完整性缺陷。
-5. **无需恢复通用 Runtime、Looper 或 RunState 包。** 当前运行状态由具体 RunStrategy 私有管理，符合策略可替换和构建期/运行期分离原则。
+1. **既然 `acore` 是对外发布的公开 Go 模块，当前第一优先级是完成首个版本发布。** 当前工作区已经补充标签发布 Workflow、Changelog、发布指南、兼容性说明、包级文档和模块外导入检查，但还没有实际 SemVer 标签与 GitHub Release；完整闭环必须以 `v0.1.0` 发布成功为准。
+2. **项目级最大功能缺口仍在 `agent` 应用，而不是 `acore` 最小运行核心。** 应用没有模块边界、配置、组件装配和可运行入口，尚未完成端到端验证。
+3. **`acore` 唯一已经有数据契约却没有运行闭环的模块仍是 RunEvent。** 它应先于新增更多领域事件完成发布集成。
+4. **`acore` 生产化最短板是适配器和治理实现。** 首要是 Provider/模型 Token Estimator、持久化 Session、Telemetry 订阅器，以及按需提供 LLM 装饰器和 Tool Proxy。
+5. **下一批值得专项设计的公共能力是执行预算、Provider 能力/错误语义/公共协议校验和 Structured Output。** 它们会影响多个 Provider 或 Strategy，但当前尚无足够用例授权直接新增包。
+6. **Context Contributor/Retriever、History Compactor、Guardrail、丰富 Tool Result/Artifact、Checkpoint、MCP、长期记忆和高级策略仍是场景驱动能力。** 应按依赖顺序逐项设计，而不是批量建立空模块。
+7. **README、LICENSE、Strategy 包级文档、安全策略和主要设计状态已经同步。** 后续每次发布仍需持续维护这些公开承诺。
+8. **无需恢复通用 Runtime、Looper 或 RunState 包。** 当前运行状态由具体 RunStrategy 私有管理；只有 Checkpoint、Workflow 或跨策略预算出现后，才重新评估共享运行控制层。
 
 ## 3. 已实现模块盘点
 
@@ -302,7 +307,7 @@ SingleTurn / ToolLoop                │
 - `go test -race ./...`；
 - `go vet ./...`。
 
-当前 `acore` 根目录没有 README、版本标签和发布说明。
+当前 `acore` 根目录已经有 README、快速开始、安全边界说明和 Apache 2.0 LICENSE。常规 CI 在 `main` push 和 pull request 上运行；当前工作区新增的 Release Workflow 监听稳定 SemVer 标签，在独立质量门禁通过后创建 GitHub Release，并验证公共 Go module proxy。Changelog、发布指南、Provider 能力矩阵，以及 `singleturn`、`toolloop` 两个公开子包的包级文档也已经补充。当前剩余缺口是提交这些基础设施并实际发布、验证 `v0.1.0`。
 
 ## 4. 当前实际运行数据流
 
@@ -334,6 +339,28 @@ SingleTurn / ToolLoop                │
 - OpenAI Chat Completions Provider。
 
 ## 5. 模块缺口
+
+先按“现在是否应进入专项设计”汇总：
+
+| 能力 | 当前状态 | 是否是 acore 核心缺口 | 建议动作 |
+| --- | --- | --- | --- |
+| 公开模块版本化发布 | 发布基础设施已补充，无实际版本与 Release | 是，发布缺口 | acore 第一优先级，完成 `v0.1.0` 发布与模块外验收 |
+| Agent 应用装配 | 应用未实现 | 否 | 项目功能第一优先级，建立端到端闭环 |
+| RunEvent 发布集成 | 契约已实现、未接入 | 是，集成缺口 | acore 功能第一优先级 |
+| Token Estimator | 有接口、无实现 | 否，适配器缺口 | 选定模型后实现 |
+| 持久化 Session | 有接口、只有内存实现 | 否，适配器缺口 | 选定后端后实现 |
+| Telemetry/重试/限流/Tool 治理 | 有扩展点、无通用实现 | 否，治理组件缺口 | 按部署需求逐项实现 |
+| 执行预算 | 只有 ToolLoop 次数/大小限制 | 候选公共能力 | 在多轮成本控制或 BestOfN 前专项设计 |
+| Provider 能力、错误分类与协议校验 | 只有部分模型元数据、Provider 专属错误和分散校验 | 候选公共契约 | 在第二种 API/Provider 或通用重试前设计 |
+| Structured Output | 无稳定契约 | 候选公共能力 | 可作为下一项产品能力 |
+| Retriever/Context Contributor、Compactor | 无稳定契约 | 否，场景能力 | 长上下文/RAG 用例出现后设计 |
+| Guardrail/Policy | Tool 侧已有 Proxy，输入输出侧未设计 | 否，场景能力 | 先明确阻断点和决策语义 |
+| Rich Tool Result/Artifact | 文本协议无法表达 | 是，出现多模态结果时的协议缺口 | 有文件/图片/大对象需求后专项设计 |
+| Checkpoint/Interrupt/Resume | 未设计 | 否，当前最小闭环不需要 | 人工审批或恢复需求出现后设计 |
+| MCP、长期记忆、多 Agent、Workflow | 未设计 | 否，生态/高级编排能力 | 按产品需求引入 |
+| Eval/Test Kit | 现有包有单测，无公共评测工具 | 否，开发者体验能力 | 出现跨项目重复测试需求后再抽取 |
+
+这张表中的“不是核心缺口”不表示能力不重要，而是说明现有公开接口已经允许模块外实现，或当前没有足够需求证明它应进入 `acore`。
 
 ### 5.1 第一优先级：agent 应用装配
 
@@ -420,23 +447,115 @@ SingleTurn / ToolLoop                │
 
 不建议创建同时包装 Agent、LLM、Tool、Session 和 Event 的全能 Middleware。
 
-### 5.6 第二优先级：公开模块文档与发布
+### 5.6 候选公共能力：执行预算与配额
 
-性质：**工程化缺口**。
+性质：**候选公共能力，尚未形成稳定接口**。
 
-`acore` 面向外部用户，但目前缺少：
+现有 `ToolLoopLimits` 只限制模型轮次、工具调用数和单个工具结果字节数；`context.Context` 可以限制总时间，`model.Request.MaxTokens` 只能限制单次模型输出。当前不能直接表达：
 
-- 顶层 README 和快速开始；
-- 模块选择与组装示例；
-- API 稳定性和兼容性承诺；
-- 语义化版本和发布流程；
-- 安全边界说明；
-- Provider 能力矩阵；
-- 设计文档状态同步。
+- 一次 Run 的累计输入/输出 Token 上限；
+- 多模型轮次、Reflection 或 BestOfN 的总生成预算；
+- 不同工具的权重、配额或并发限制；
+- 成本上限和 Provider 价格版本；
+- 命中预算时返回失败、部分结果还是可恢复中断。
 
-例如 `run-event-module-design.md` 仍写着“待确认、只设计不实现”，但 `agent/runevent` 已实际存在。此类状态应在后续文档维护中同步。
+在出现真实多轮成本治理需求前，不建议立即增加通用 `budget` 包。专项设计时应把“可由框架可靠计算的计数/Token”与“依赖应用价格、租户配额和计费规则的成本”分开；预算检查应发生在下一次有副作用或付费操作之前，而不是只在 Run 结束后统计。
 
-### 5.7 按需求引入：上下文贡献与 RAG
+### 5.7 候选公共契约：Provider 能力、错误分类与协议校验
+
+性质：**候选公共契约，第二种 API/Provider 前需要复核**。
+
+当前 `model.Model` 只有 Reasoning、InputModalities、ContextWindow 和 MaxOutputTokens 等部分元数据。它没有稳定表达 Tool Call、Structured Output、图片输出、并行 Tool Call、Prompt Cache 等能力。ToolLoop 目前只能发起请求并由具体 Provider 接受或拒绝。
+
+当前错误也主要由具体 Provider 定义，例如 OpenAI `APIError`。如果未来实现跨 Provider 的重试、Fallback 或路由，装饰器无法仅依靠统一契约稳定判断：
+
+- 错误是否可重试；
+- 是否为限流、认证、输入过大、内容过滤或能力不支持；
+- 是否已经建立流以及是否可能产生计费或部分输出；
+- Fallback 到另一个模型是否语义安全。
+
+相邻问题是 Provider 无关协议的结构校验尚未集中。`model` 只执行少量 Request/Tool Spec 校验，角色与 ContentBlock 组合、ToolCall/Tool Result 关联、图片字段等主要由 OpenAI 适配器检查。第二个 Provider 可能复制这些逻辑或形成不一致语义。后续应区分：
+
+- `model` 负责所有 Provider 共享的结构不变量；
+- Provider 负责自身 API 不支持的内容和参数范围；
+- Strategy 负责运行算法特有的不变量，例如 Tool Call ID 跨轮唯一。
+
+不应预先枚举所有厂商能力和错误，也不必现在新增宽泛 Validation 包。建议在引入 OpenAI Responses API 或第二个 Provider 时，以两个实际实现的交集验证最小 Capability/Error/Validation 契约；Provider 专属字段仍留在适配包。
+
+### 5.8 候选产品能力：Structured Output 与输出校验
+
+性质：**候选公共能力，可作为下一项产品功能**。
+
+现有模型协议只能返回普通 `model.Message`，没有输出 Schema、JSON 模式、Validator 或 Repair 语义。若应用需要稳定 DTO，需要明确：
+
+- Schema 是 Provider 请求能力还是 Agent 结果校验；
+- 只包装一次模型生成，还是可包装任意子策略最终结果；
+- Validator 接口、错误路径和脱敏反馈；
+- 最大修复轮次、累计 Usage 和预算；
+- 流式 Delta 如何处理，最终结构化值放入何种 Result；
+- Provider 原生 Structured Output 与通用 Validate/Repair 的降级关系。
+
+优先把 Validator 设计为小型可替换组件，不在核心内实现不完整的 JSON Schema。是否建立独立 Strategy，应由“是否拥有多轮修复控制流”决定。
+
+### 5.9 按需求引入：Guardrail / Policy
+
+性质：**输入输出侧尚未设计，Tool 侧已有扩展点**。
+
+`tool.Proxy` 已能承载工具鉴权、参数审查、超时和审计；普通 `agent.Event` 与 RunEvent 只适合观察，不能返回阻断决策。若需要 Prompt 注入检测、内容合规、PII 处理、模型输出校验或高风险动作审批，应先区分：
+
+- 纯变换、允许/拒绝、需要人工审批三种结果；
+- Agent 输入、模型请求、模型结果、工具执行前后的不同拦截点；
+- 同步拒绝与可恢复中断；
+- 原始敏感内容是否允许进入日志和事件；
+- Policy 失败是业务拒绝还是系统错误。
+
+不要把需要决策的 Guardrail 实现成 Event Handler，也不要用一个全能 Middleware 同时修改 LLM、Tool、Session 和 Agent。
+
+### 5.10 按需求引入：Eval / Test Kit
+
+性质：**开发者体验能力，不是运行核心缺口**。
+
+仓库已有较完整的单元测试和示例，外部实现也可直接用公开 `model.LLM`、`tool.Service`、`session.Service` 编写替身。当前没有证据需要公共测试框架。只有多个外部项目重复实现以下能力时，才考虑抽取独立包：
+
+- Scripted/Fake LLM 和流协议断言；
+- Tool/Session 契约测试套件；
+- 确定性 Agent 场景、Golden Case 和回归数据；
+- 质量评分、延迟/Token 统计和离线报告。
+
+评测数据集、业务评分器和 CI 阈值通常属于应用或独立工具，不应进入 Agent 运行链路。
+
+### 5.11 第一优先级：完成首个公开 Go 模块版本
+
+性质：**发布基础设施已实现，实际发布尚未完成**。
+
+`acore` 面向外部用户，当前工作区已经具备顶层 README、快速开始、组装示例、安全边界说明、LICENSE、常规 CI、Release Workflow、Changelog 和发布指南。只有在这些改动提交到 `main`，并由 `v0.1.0` 标签成功触发 GitHub Release 和模块代理验证后，才形成“提交可验证、版本可追踪、外部可安装”的完整闭环。
+
+Go 库的主要发布物是带版本标签的模块源码，不是必须上传单独二进制。当前 `go.mod` 位于 GitHub 仓库根，因此版本应使用仓库根 SemVer 标签，例如首个确认版本 `v0.1.0`；不使用子目录标签，也不应同时在代码中维护另一套容易漂移的版本号。只有未来确实提供 CLI/Server 命令时，才另外构建平台二进制和 checksum。
+
+发布专项方案至少需要覆盖：
+
+- **版本规则**：首个版本号、`v0` 阶段兼容性承诺、何时升级 major/minor/patch、弃用周期；
+- **发布触发**：人工审批后创建不可变 `vX.Y.Z` 标签，由 GitHub Actions 校验标签格式与提交状态并创建 GitHub Release；
+- **质量门禁**：`go build ./...`、`go test ./...`、`go vet ./...`、`go test -race ./...`，以及需要支持的 Go 版本矩阵；
+- **公开 API 检查**：导出标识符文档、破坏性变更检查、README 示例和 Provider 能力矩阵；
+- **模块完整性**：`go.mod`/`go.sum`、LICENSE、无本地 `replace`、无敏感文件和无不应发布的生成物；
+- **模块外验收**：在临时独立模块执行 `go get github.com/JIAOZAI1/acore@vX.Y.Z`，构建最小 SingleTurn/ToolLoop 示例；
+- **发布信息**：Changelog 或自动生成 Release Notes，列明新增、修复、破坏性变化、最低 Go 版本和已知限制；
+- **供应链权限**：Workflow 使用最小 `contents: write` 权限，不保存长期 GitHub Token，不移动或覆盖已发布标签；
+- **发布后验证**：确认 GitHub Release、`go list -m github.com/JIAOZAI1/acore@vX.Y.Z` 和 Go module proxy/checksum 数据可解析。
+
+当前工作区已经补齐：
+
+- `agent/agent-strategy/singleturn` 与 `toolloop` 的包级文档；
+- `v0` API 稳定性、安全支持和漏洞报告说明；
+- Provider/API/内容类型能力矩阵；
+- RunEvent 设计文档的实际实现状态。
+
+`CHANGELOG.md` 已建立 `0.1.0` 版本章节并记录发布日期；Release Workflow 会拒绝没有对应 Changelog 章节的标签。当前剩余步骤是提交改动、确认远端 CI、创建 annotated tag 并由 GitHub 完成发布后验证。
+
+发布工作流不应根据未审核提交自动推导并推送版本标签；版本决策属于发布者。建议流程是“确认版本与 Release Notes → 创建标签 → CI 重新验证该标签 → 创建 GitHub Release”。
+
+### 5.12 按需求引入：上下文贡献与 RAG
 
 性质：**尚未设计**。
 
@@ -451,7 +570,7 @@ SingleTurn / ToolLoop                │
 
 简单“检索后注入再生成”优先做组件，不必新增 RAGStrategy；只有形成查询重写、评估和再检索循环时才定义策略。
 
-### 5.8 按需求引入：History Compactor
+### 5.13 按需求引入：History Compactor
 
 性质：**尚未设计，现有 Reducer 无法表达**。
 
@@ -466,7 +585,7 @@ SingleTurn / ToolLoop                │
 
 不应改变 TailReducer 使其同时承担裁剪、摘要、持久化和检索。
 
-### 5.9 按需求引入：丰富 Tool Result 与 Artifact
+### 5.14 按需求引入：丰富 Tool Result 与 Artifact
 
 性质：**需要协议级专项设计**。
 
@@ -482,7 +601,7 @@ SingleTurn / ToolLoop                │
 
 不能只把 `tool.Result.Content string` 改为 `any`。
 
-### 5.10 按需求引入：Checkpoint / Interrupt / Resume
+### 5.15 按需求引入：Checkpoint / Interrupt / Resume
 
 性质：**尚未设计**。
 
@@ -497,7 +616,7 @@ SingleTurn / ToolLoop                │
 
 Session Snapshot、Agent Result 和 Checkpoint 不能合并成一个通用 State。Checkpoint 也不能自动保证 Tool 副作用 exactly-once。详细参考 [Eino Checkpoint 持久化分析](eino-checkpoint-persistence-analysis.md)。
 
-### 5.11 按需求引入：MCP
+### 5.16 按需求引入：MCP
 
 性质：**外部协议适配缺口**。
 
@@ -511,7 +630,7 @@ MCP 应适配为 `tool.Tool` 或 `tool.Service`，不修改 ToolLoop 识别 MCP�
 
 首版建议在构建 Agent 前完成发现并快照到不可变 Tool System。运行期热更新需要另行设计版本化 Catalog。
 
-### 5.12 按需求引入：长期记忆
+### 5.17 按需求引入：长期记忆
 
 性质：**尚未设计**。
 
@@ -523,7 +642,7 @@ MCP 应适配为 `tool.Tool` 或 `tool.Service`，不修改 ToolLoop 识别 MCP�
 
 在定义公共接口前，先确认写入时机、用户可见性、租户隔离、删除权、保留周期和敏感数据策略。
 
-### 5.13 按需求引入：其他运行策略
+### 5.18 按需求引入：其他运行策略
 
 当前 [Agent 运行策略路线图](agent-run-strategy-roadmap.md) 中只有 SingleTurn 和 ToolLoop 已实现。
 
@@ -565,6 +684,8 @@ MCP 应适配为 `tool.Tool` 或 `tool.Service`，不修改 ToolLoop 识别 MCP�
 
 | 能力 | 推荐归属 |
 | --- | --- |
+| GitHub Actions、SemVer 标签、GitHub Release、Release Notes | `acore` 仓库发布工程 |
+| 模块版本解析与分发 | Git 标签 + Go module proxy；不放入运行时代码 |
 | 配置、凭证、CLI/API、资源生命周期 | `agent` 应用 |
 | Agent 调用契约和共享 Builder | `acore/agent` |
 | 具体运行算法 | `acore/agent/agent-strategy/<strategy>` |
@@ -572,16 +693,33 @@ MCP 应适配为 `tool.Tool` 或 `tool.Service`，不修改 ToolLoop 识别 MCP�
 | RunEvent 发布集成 | 待专项设计，优先小型 Agent/Strategy 观察组件 |
 | Token Estimator | Provider/模型专属适配包 |
 | 数据库/缓存 Session | 独立存储适配包或应用实现 |
-| LLM 重试和限流 | `model.LLM` 装饰器 |
+| LLM 重试和限流 | `model.LLM` 装饰器；通用实现前先补足错误分类需求 |
 | Tool 治理 | `tool.Proxy` |
 | Telemetry 导出 | RunEvent 订阅器或适配包 |
+| 执行预算 | 先放具体 Strategy；确认跨策略复用后再抽小接口 |
+| Provider 能力/错误分类/公共结构校验 | `model` 最小公共契约 + Provider 专属详情 |
+| Structured Output | Validator 组件；需要修复循环时使用 Strategy/Strategy 装饰器 |
+| 输入/输出 Guardrail | Agent/Strategy 边界的显式 Policy；Tool 侧继续用 Proxy |
+| Rich Tool Result/Artifact | `tool`、`model` 和序列化链路的联合协议升级 |
 | MCP | `tool.Service`/`tool.Tool` 适配包 |
 | Retriever/Memory | Tool、Contributor 或独立适配包 |
+| Eval/Test Kit | 独立开发/测试包，不进入生产运行链路 |
 | Checkpoint | 运行状态语义确认后的独立模块 |
 
 ## 8. 推荐实施顺序
 
-### 阶段一：建立应用闭环
+### 阶段一：建立公开模块发布闭环
+
+1. 编写 GitHub 版本发布专项方案，确认首个版本、兼容性规则、触发方式和权限；
+2. 补齐公开包文档、Provider 能力矩阵、设计状态和 Release Notes；
+3. 增加标签发布 Workflow，在发布提交上重新执行 build、test、race 和 vet；
+4. 创建不可变 SemVer 标签与 GitHub Release；
+5. 从仓库外临时模块通过版本号安装并构建 README 示例；
+6. 验证 GitHub 和 Go module proxy 能解析该版本。
+
+验收：外部项目可以使用 `go get github.com/JIAOZAI1/acore@vX.Y.Z` 获得可重复构建的版本，GitHub Release 能追溯到通过门禁的唯一提交。
+
+### 阶段二：建立应用闭环
 
 1. 编写 `agent` 应用模块与入口专项方案；
 2. 确认 `go.mod` 或 `go.work`；
@@ -589,9 +727,9 @@ MCP 应适配为 `tool.Tool` 或 `tool.Service`，不修改 ToolLoop 识别 MCP�
 4. 提供最小 CLI/API；
 5. 使用可控服务完成端到端自动化测试。
 
-验收：`agent` 应用可以构建，并完成一次单轮生成和一次 ToolLoop。
+验收：`agent` 应用可以构建，并完成一次单轮生成和一次 ToolLoop；同时作为 `acore` 的模块外消费者验证公开 API。
 
-### 阶段二：接入标准运行事件
+### 阶段三：接入标准运行事件
 
 1. 编写 Publisher/Run ID/Sequence/Clock 集成方案；
 2. 覆盖成功、失败、取消、早停和 Session Commit 失败；
@@ -600,19 +738,24 @@ MCP 应适配为 `tool.Tool` 或 `tool.Service`，不修改 ToolLoop 识别 MCP�
 
 验收：每个已开始 Run 都有可关联、完整且有序的生命周期事件。
 
-### 阶段三：生产化会话与上下文
+### 阶段四：生产化会话与上下文
 
 1. 选择首个持久化 Session 后端；
 2. 实现首个 Provider/模型 Estimator；
 3. 增加 Session 冲突和长历史集成测试；
-4. 按部署需要补充 LLM 装饰器、Tool Proxy 和 Telemetry Adapter；
-5. 完善 README、示例和版本策略。
+4. 按部署需要补充 LLM 装饰器、Tool Proxy 和 Telemetry Adapter。
 
 验收：会话可跨进程保存，长历史能够在模型窗口内安全运行，关键调用可观测且受限。
 
-### 阶段四：按产品需求选择一个能力
+### 阶段五：按产品需求选择一个能力
 
-从 Structured Output、Retriever/RAG、History Compactor、Rich Tool Result、MCP、Checkpoint 或长期记忆中选择真实需要的一项，重新检查代码并编写专项方案。
+- 若下一步引入第二种 Provider/API 或通用重试：先设计 Capability、错误分类与公共协议校验；
+- 若下一步增加多轮/并行生成：先设计总执行预算；
+- 若下一步需要稳定业务 DTO：优先 Structured Output；
+- 若下一步需要知识注入：选择 Retriever/Contributor，再判断是否需要 RAGStrategy；
+- 若下一步需要文件、图片或大对象工具结果：设计 Rich Tool Result/Artifact；
+- 若下一步需要人工审批或跨进程恢复：先设计 Checkpoint/Interrupt/Resume；
+- MCP、长期记忆、Guardrail 和其他策略按真实产品场景分别进入专项设计。
 
 不要批量创建所有候选模块的空接口或占位实现。
 
@@ -622,6 +765,7 @@ MCP 应适配为 `tool.Tool` 或 `tool.Service`，不修改 ToolLoop 识别 MCP�
 
 ```bash
 go list ./...
+go build ./...
 go test ./...
 go vet ./...
 go test -race ./...
@@ -630,15 +774,29 @@ go test -race ./...
 结果：
 
 - `go list ./...`：成功，列出 15 个包；
+- `go build ./...`：通过；
 - `go test ./...`：通过；
 - `go vet ./...`：通过；
-- `go test -race ./...`：未执行成功，当前环境 `CGO_ENABLED=0`，Go 返回 `-race requires cgo`；
-- CI 已配置在 Ubuntu 环境执行 `go test -race ./...`；
-- 命令输出包含 `Failed to create stream fd: Operation not permitted`，但不影响前三个成功命令的退出状态。
+- `go test -race ./...`：默认环境 `CGO_ENABLED=0` 无法执行；显式设置 `CGO_ENABLED=1` 后又因本机没有 `gcc` 失败，未完成本地竞态验证；
+- CI 与 Release Workflow 均配置在 Ubuntu 环境执行 `go test -race ./...`；
+- 所有公开包均已有 package doc；
+- Release Workflow YAML 可解析，所有内嵌 Shell 通过 `bash -n` 语法检查；
+- 使用临时独立模块和本地 `replace` 导入全部公开包并执行 `go test ./...`：通过；
+- `git tag --list` 为空，当前没有可供外部固定使用的 SemVer 版本；
+- 尚未执行带版本号的远程 `go get`、GitHub Release 和 module proxy 验证，因为当前没有发布标签。
 
-本次只重新生成 Markdown 分析文档，没有修改 `acore` 或 `agent` 业务代码。
+本次实现了发布 Workflow、Changelog、发布与安全文档、README 版本信息和两个公开 Strategy 子包的包级文档；没有修改 Agent 运行逻辑，也没有创建提交、标签或 GitHub Release。
 
-## 10. 下一步实现前必须确认的决策
+## 10. 已确认发布决策与后续待确认事项
+
+已确认并按此实现发布基础设施：
+
+1. 首个计划公开版本为 `v0.1.0`，采用 SemVer，`v0` 阶段的破坏性变化必须明确记录；
+2. 发布者手工创建 annotated tag，Release Workflow 只验证标签和创建 GitHub Release；
+3. 最低版本为 Go 1.26；
+4. 当前只发布 Go 模块源码，不构建 CLI/Server 二进制。
+
+后续功能实现前仍需确认：
 
 1. `agent` 使用独立 `go.mod` 还是根 `go.work`；
 2. 首个应用入口采用 CLI 还是 HTTP API；
@@ -646,13 +804,17 @@ go test -race ./...
 4. Run ID 由调用方提供还是框架生成；
 5. 首个 Session 后端；
 6. 首个 Estimator 面向哪个 Provider/API/模型；
-7. 是否需要 Responses API 或其他 Provider；
-8. 下一项产品能力是 Structured Output、RAG/MCP、Memory 还是 Checkpoint。
+7. 是否需要 Responses API 或其他 Provider，以及是否已到设计 Capability、错误分类和公共协议校验的时机；
+8. 是否已经出现跨模型轮次的总 Token/成本预算需求；
+9. 下一项产品能力是 Structured Output、RAG/MCP、Memory、Rich Tool Result、Guardrail 还是 Checkpoint。
 
 这些选择会影响公开 API 或模块边界，应分别形成设计文档并等待确认后再实现。
 
 ## 11. 相关文档
 
+- [公开模块发布指南](../RELEASING.md)
+- [版本变更记录](../CHANGELOG.md)
+- [安全支持策略](../SECURITY.md)
 - [Agent 公开契约与 Builder 设计](agent-public-contract-builder-design.md)
 - [Agent ToolLoop 策略设计](agent-tool-loop-strategy-design.md)
 - [Agent 运行策略路线图](agent-run-strategy-roadmap.md)

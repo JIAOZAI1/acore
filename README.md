@@ -5,7 +5,7 @@
 
 `acore` 是一个用 Go 编写的可组合 Agent 框架。它通过 Builder 组装模型、运行策略、工具、Prompt、Session 和上下文窗口组件，让应用可以按场景选择、替换和扩展能力，而不把具体 Provider 或业务实现固化在 Agent 主流程中。
 
-项目当前已具备 SingleTurn 和 ToolLoop 两条可运行链路，适合继续构建自定义 Agent、Provider、Tool 和运行策略。仓库尚未发布版本标签，公开 API 仍可能随设计演进；正式集成时建议固定提交或 pseudo-version。
+项目当前已具备 SingleTurn 和 ToolLoop 两条可运行链路，适合继续构建自定义 Agent、Provider、Tool 和运行策略。首个公开版本号为 `v0.1.0`；当前处于 `v0` 阶段，公开 API 仍可能按明确记录的版本变化继续演进。
 
 ## 设计目标
 
@@ -29,6 +29,22 @@
 - 可替换 Token Estimator、Context Window Reducer 和尾部裁剪策略；
 - 同步、进程内、类型安全的 Event Bus；
 - 标准 RunEvent 数据契约。
+
+### Provider 能力矩阵
+
+| 能力 | 核心协议 | OpenAI Chat Completions |
+| --- | --- | --- |
+| 流式文本生成 | 支持 | 支持 |
+| 文本输入 | 支持 | 支持 |
+| 图片输入 | 支持 | 支持 URL 和 base64 data URL |
+| Thinking 内容 | 支持 | 不支持映射 |
+| Tool Call | 支持 | 支持 |
+| Reasoning Level | 支持 | 映射为 `reasoning_effort` |
+| Structured Output | 未定义 | 未实现 |
+| Tool Result | 仅文本 | 仅文本 |
+| Token Estimator | 提供扩展接口 | 未提供具体实现 |
+
+矩阵描述当前代码能力，不代表上游服务中所有模型都支持对应特性。应用仍需按具体模型配置和 Provider 返回结果处理能力差异。
 
 ## 架构
 
@@ -60,15 +76,19 @@
 
 ## 安装
 
+发布版本应始终显式指定：
+
 ```bash
-go get github.com/JIAOZAI1/acore
+go get github.com/JIAOZAI1/acore@v0.1.0
 ```
 
-当前仓库没有版本标签。如需可重复构建，请固定一个已验证的 commit：
+如果 GitHub 上尚未出现 `v0.1.0` 标签和 Release，说明首次发布尚未完成；此时只能临时固定一个已验证的 commit：
 
 ```bash
 go get github.com/JIAOZAI1/acore@<commit>
 ```
+
+不要依赖未固定的分支头完成生产构建。
 
 ## 快速开始：SingleTurn
 
@@ -434,6 +454,17 @@ Stream 是 pull-based 的。调用方停止迭代会向底层生成器传播早�
 - Structured Output、Reflection、Router、PlanExecute、Handoff 和 Workflow 等策略尚未实现。
 
 这些能力会在出现明确用例后按模块设计，不会通过一个全能 Runtime 或 Middleware 一次性引入。
+
+## 版本与发布
+
+- 模块使用 `vMAJOR.MINOR.PATCH` 形式的 SemVer 标签；
+- 当前处于 `v0` 阶段，破坏性变化会在 Changelog 和 GitHub Release Notes 中明确说明；
+- 最低 Go 版本以 `go.mod` 为准，当前为 Go 1.26；
+- 当前只发布 Go 模块源码，不发布独立 CLI 或 Server 二进制；
+- 发布者手工创建版本标签，GitHub Actions 验证后创建 GitHub Release；
+- 已发布标签不可移动或覆盖，修复通过新版本发布。
+
+版本变化见 [CHANGELOG.md](CHANGELOG.md)，维护者发布步骤见 [RELEASING.md](RELEASING.md)，漏洞报告与支持范围见 [SECURITY.md](SECURITY.md)。
 
 ## 开发与验证
 

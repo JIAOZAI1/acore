@@ -1,6 +1,6 @@
 # 标准运行事件定义模块设计方案
 
-状态：待确认（本阶段仅设计，不实现、不接入发布流程）
+状态：事件数据契约已实现；Publisher 与 Agent 运行链路集成待专项设计
 
 ## 1. 背景
 
@@ -145,21 +145,23 @@ RunStartedEvent
 
 事件结构采用显式字段和 JSON 标签，字段新增应保持向后兼容；删除或改变名称属于破坏性变更。未知事件名称和未知枚举值应允许消费者安全忽略。原始提示词、消息、思维链、图片、工具参数、工具结果、原始错误文本默认不进入标准事件；如确需审计，另行设计受控扩展事件和权限边界。
 
-## 8. 后续实现拆分
+## 8. 实际进度与后续拆分
 
-本方案确认后，分两步实现：
+当前进度：
 
-1. 在 `acore/agent/runevent` 新增 `*Event` 类型、名称、枚举、注释和单元测试；验证所有类型实现 `event.Event`，名称唯一且 JSON 字段稳定。
-2. 另行设计并实现发布集成：明确 Publisher 注入点、RunID/Sequence 生命周期、同步或异步错误策略、取消语义及脱敏策略。该步骤不应与事件定义混在同一个改动中。
+1. `acore/agent/runevent` 中的 `*Event` 类型、名称、枚举、注释和单元测试已经实现；所有事件类型实现 `event.Event`，名称和 JSON 字段已有测试覆盖。
+2. Publisher 尚未接入 Agent 与 Strategy。后续仍需另行设计：Publisher 注入点、RunID/Sequence 生命周期、同步或异步错误策略、取消语义及脱敏策略。该步骤不应与事件数据契约混在同一个改动中。
 
-验证计划：在 `acore` 模块执行 `gofmt`、`go test ./...`、`go vet ./...`；若加入并发发布实现，再执行 `go test -race ./...`。
+后续验证计划：在 `acore` 模块执行 `gofmt`、`go test ./...`、`go vet ./...`；加入并发发布实现后执行 `go test -race ./...`。
 
-## 9. 待确认事项
+## 9. 发布集成前待确认事项
 
-请确认以下边界后再进入代码实现：
+现有事件数据契约保持不变。进入 Publisher 集成前仍需确认：
 
-1. 包路径采用 `acore/agent/runevent`，而不是扩展现有 `agent` 或 `event` 包。
-2. 首期标准事件采用上述九类及稳定名称。
-3. 事件只携带脱敏摘要，不携带原始内容和原始错误。
-4. 首期只定义契约，不接入 Publisher、Bus 和 Agent 运行流程。
-5. `model.Usage`、`model.StopReason` 作为完成事件的复用字段保持现有类型。
+1. Publisher 注入 Agent Builder、Strategy Builder，还是独立 RunStrategy 装饰器；
+2. RunID 由调用方提供还是框架生成，是否进入 Agent Request/Result；
+3. Sequence 与 Clock 的所有权和并发隔离方式；
+4. setup error、调用方早停、Context 取消和 Session 提交失败的终态映射；
+5. Publisher 错误是否影响主 Run；
+6. ToolLoop 专属事件如何由通用观察层发布；
+7. 默认脱敏规则与稳定错误码来源。
