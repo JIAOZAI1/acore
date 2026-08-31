@@ -6,7 +6,7 @@
 
 ### Fixed
 
-- Release Workflow 显式获取 annotated tag 对象，避免 `actions/checkout` 解引用标签后误判为 lightweight tag。
+- Release Workflow 显式获取 annotated tag 对象，并正确清理只读 Go module cache，避免标签类型和发布后验证误判。
 
 ## [0.1.0] - 2026-08-31
 

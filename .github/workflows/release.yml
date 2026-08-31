@@ -176,9 +176,11 @@ jobs:
               GOPROXY="https://proxy.golang.org" \
               GOSUMDB="sum.golang.org" \
               go mod download "${module}"; then
+              chmod -R u+w "${cache}" 2>/dev/null || true
               rm -rf "${cache}"
               exit 0
             fi
+            chmod -R u+w "${cache}" 2>/dev/null || true
             rm -rf "${cache}"
             if [[ "${attempt}" -eq 20 ]]; then
               echo "module proxy did not resolve ${module}" >&2
